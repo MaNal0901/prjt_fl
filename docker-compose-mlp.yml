@@ -16,7 +16,7 @@ services:
       - ./results:/app/results
       - ./certs:/certs
     environment:
-      - NUM_ROUNDS=2
+      - NUM_ROUNDS=30
       - MIN_CLIENTS=4
       - MODEL_TYPE=mlp
       - INPUT_DIM=37
@@ -45,7 +45,7 @@ services:
       - MODEL_TYPE=mlp
       - LOCAL_EPOCHS=10
       - BATCH_SIZE=80
-      - LR=0.01
+      - LR=0.003
       - INPUT_DIM=37
       - OMP_NUM_THREADS=1
     volumes:
@@ -72,7 +72,7 @@ services:
       - MODEL_TYPE=mlp
       - LOCAL_EPOCHS=10
       - BATCH_SIZE=80
-      - LR=0.01
+      - LR=0.003
       - INPUT_DIM=37
       - OMP_NUM_THREADS=1
     volumes:
@@ -99,7 +99,7 @@ services:
       - MODEL_TYPE=mlp
       - LOCAL_EPOCHS=10
       - BATCH_SIZE=80
-      - LR=0.01
+      - LR=0.003
       - INPUT_DIM=37
       - OMP_NUM_THREADS=1
     volumes:
@@ -126,7 +126,7 @@ services:
       - MODEL_TYPE=mlp
       - LOCAL_EPOCHS=10
       - BATCH_SIZE=80
-      - LR=0.01
+      - LR=0.003
       - INPUT_DIM=37
       - OMP_NUM_THREADS=1
     volumes:

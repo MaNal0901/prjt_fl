@@ -56,12 +56,25 @@ def evaluate_global_model(params):
             logits_tensor = model(X_global)
             probs = torch.sigmoid(logits_tensor).numpy().flatten()
         probs = np.nan_to_num(probs, nan=0.5, posinf=1.0, neginf=0.0)
-        preds = (probs >= 0.5).astype(int)
+
+        # ✅ CORRECTION — seuil optimal au lieu de 0.5 fixe
+        # Le modèle produit des probabilités très basses (~0.02-0.05) pour les fraudes.
+        # Avec seuil=0.5, Recall=0 et F1≈0 malgré un AUC à 0.95.
+        best_t, best_f1 = 0.5, 0.0
+        for t in np.arange(0.05, 0.95, 0.02):
+            p = (probs >= t).astype(int)
+            f = float(f1_score(y_global, p, zero_division=0))
+            if f > best_f1:
+                best_f1, best_t = f, t
+        preds = (probs >= best_t).astype(int)
+        print(f"[Server] Seuil optimal global : {best_t:.2f} (F1={best_f1:.4f})")
+
         return {
             "f1":        float(f1_score(y_global,        preds, zero_division=0)),
             "auc":       float(roc_auc_score(y_global,   probs) if len(np.unique(y_global)) > 1 else 0.0),
             "precision": float(precision_score(y_global, preds, zero_division=0)),
             "recall":    float(recall_score(y_global,    preds, zero_division=0)),
+            "threshold": float(best_t),
         }
     except Exception as e:
         print(f"[Server] Evaluation globale echouee : {e}")
@@ -84,22 +97,22 @@ def evaluate_metrics_aggregation(metrics):
 
 # ── Strategie FL : FedAvg + agrégation Eq.7 sur les poids ───────────────────
 class FraudStrategy(FedAvg):
-    def __init__(self, *args, **kwargs):
+   def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._last_params = None
+        self._last_alphas = {}   # AJOUTER — {bank_id: alpha} depuis evaluate()
 
     def aggregate_fit(self, rnd, results, failures):
         if failures:
             print(f"[Server] Round {rnd} — {len(failures)} client(s) en échec")
 
         # ── Agrégation Eq.7 : pondération des poids par alpha ───────────────
-        # Au lieu de laisser FedAvg faire FedAvg standard (pondéré par n),
-        # on pondère chaque client par alpha = AUC * log1p(n) envoyé par le client
         weighted_params = None
         total_alpha     = 0.0
 
         for _, fit_res in results:
-            alpha  = fit_res.metrics.get("alpha", 0.0)
+            bank_id = fit_res.metrics.get("bank_id", "?")
+            alpha   = self._last_alphas.get(bank_id, 1.0)  # fallback=1.0 (round 1)
             params = flwr.common.parameters_to_ndarrays(fit_res.parameters)
             params = [np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0) for p in params]
 
@@ -114,7 +127,6 @@ class FraudStrategy(FedAvg):
         if total_alpha > 0 and weighted_params is not None:
             aggregated_params = [p / total_alpha for p in weighted_params]
         else:
-            # Fallback : FedAvg standard si alpha tous nuls
             print(f"[Server] Round {rnd} — alpha_sum=0, fallback FedAvg standard")
             aggregated_params = None
 
@@ -149,9 +161,8 @@ class FraudStrategy(FedAvg):
                             for p in aggregated_params]
             self._last_params = params_clean
             parameters_agg    = flwr.common.ndarrays_to_parameters(params_clean)
-            return parameters_agg, {}  
+            return parameters_agg, {}
         else:
-            # Fallback complet sur FedAvg
             aggregated = super().aggregate_fit(rnd, results, failures)
             if aggregated and aggregated[0]:
                 params = flwr.common.parameters_to_ndarrays(aggregated[0])
@@ -181,7 +192,6 @@ class FraudStrategy(FedAvg):
         weighted_f1  = 0.0
         weighted_auc = 0.0
 
-        # Passe 1 : collecter alpha
         bank_data = []
         alpha_sum = 0.0
         for _, eval_res in results:
@@ -191,7 +201,6 @@ class FraudStrategy(FedAvg):
             alpha_sum += raw_w
             bank_data.append((eval_res.metrics, n, alpha, raw_w))
 
-        # Passe 2 : normaliser et afficher
         for m, n, alpha, raw_w in bank_data:
             weight = raw_w / alpha_sum if alpha_sum > 0 else 1 / len(bank_data)
             bank   = m.get("bank_id",         "?")
@@ -223,7 +232,7 @@ class FraudStrategy(FedAvg):
             gm = evaluate_global_model(self._last_params)
             if gm:
                 print(f"  Global test_global     — F1: {gm['f1']:.4f} | AUC: {gm['auc']:.4f} | "
-                      f"Prec: {gm['precision']:.4f} | Rec: {gm['recall']:.4f}")
+                      f"Prec: {gm['precision']:.4f} | Rec: {gm['recall']:.4f} | Seuil: {gm['threshold']:.2f}")
                 round_data["global_test"] = gm
 
         print(f"  Benchmark FFD (F=0.1)  — F1: 0.9393 | AUC: 0.9555")
@@ -233,11 +242,12 @@ class FraudStrategy(FedAvg):
         os.makedirs("/app/results", exist_ok=True)
         with open("/app/results/server_results.json", "w") as f:
             json.dump(results_log, f, indent=2)
-
+        for m, n, alpha, raw_w in bank_data:
+            bank = m.get("bank_id", "?")
+            self._last_alphas[bank] = alpha   # alpha stable depuis evaluate(
         return aggregated
 
 # ── Création de la stratégie ──────────────────────────────────────────────────
-# proximal_mu retiré — FedAvg ne le supporte pas
 strategy = FraudStrategy(
     min_available_clients=MIN_CLIENTS,
     min_fit_clients=MIN_CLIENTS,
