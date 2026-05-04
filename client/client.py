@@ -111,13 +111,14 @@ class FraudClient(fl.client.NumPyClient):
    
     def get_parameters(self, config):
         return get_params(self.model)
-
-
+    
     def fit(self, parameters, config):
+        # ── Sauvegarder les poids AVANT entraînement ─────────────────────
+        params_before = [p.copy() for p in parameters]  # ← AJOUTER ICI
         set_params(self.model, parameters)
         self.model.train()
         
-        start_time = time.time()  # ← début chrono
+        start_time = time.time()
 
         total_loss = 0.0
         for epoch in range(EPOCHS):
@@ -135,10 +136,10 @@ class FraudClient(fl.client.NumPyClient):
             print(f"[{BANK_ID}] Epoch {epoch+1}/{EPOCHS} — Loss: {avg_loss:.4f}")
             total_loss += avg_loss
 
-        mean_loss = total_loss / EPOCHS  # ← loss moyenne sur tous les epochs
+        mean_loss = total_loss / EPOCHS
 
         # Evaluation F1 post-training
-        eval_start = time.time()  # ← début chrono évaluation
+        eval_start = time.time()
         self.model.eval()
         with torch.no_grad():
             logits_tensor = self.model(X_test.to(DEVICE))
@@ -149,33 +150,37 @@ class FraudClient(fl.client.NumPyClient):
         thresh     = find_best_threshold(probs_test, y_test)
         preds_test = (probs_test >= thresh).astype(int)
         f1_local   = f1_score(y_test, preds_test, zero_division=0)
-        auc_local  = float(roc_auc_score(y_test, probs_test) 
+        auc_local  = float(roc_auc_score(y_test, probs_test)
                         if len(np.unique(y_test)) > 1 else 0.0)
-        
-        raw_params = get_params(self.model)
-        params_dp  = [apply_dp(p, C=1.0, sigma=0.1) for p in raw_params]
-        params_dp  = [np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0) for p in params_dp]
+
+        # ── DP sur delta_W (pseudo-gradients) — formule exacte du prof ───
+        params_after = get_params(self.model)
+        pseudo_grads = [after - before
+                        for after, before in zip(params_after, params_before)]
+        grads_dp     = [apply_dp(g, C=1.0, sigma=0.1) for g in pseudo_grads]
+        params_dp    = [before + grad
+                        for before, grad in zip(params_before, grads_dp)]
+        params_dp    = [np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0)
+                        for p in params_dp]
 
         eval_latency_ms = (time.time() - eval_start) * 1000
-        train_latency_s = time.time() - start_time  
+        train_latency_s = time.time() - start_time
         self.model.train()
 
         print(f"[{BANK_ID}] Fit terminé — Loss={mean_loss:.4f} | F1={f1_local:.4f} | "
             f"AUC={auc_local:.4f} | Eval={eval_latency_ms:.1f}ms")
-        
-        n_total = len(X_train)
-        alpha_stable = float(auc_local) * np.log1p(n_total)  # ← log pour éviter que les grandes banques dominent
-    
+
+        n_total      = len(X_train)
+        alpha_stable = float(auc_local) * np.log1p(n_total)
 
         return params_dp, len(X_train), {
-            "bank_id":          BANK_ID,
-            "model_type":       MODEL_TYPE,
-            "train_loss":       float(mean_loss),       # ← nouveau
-            "eval_latency_ms":  float(eval_latency_ms), # ← nouveau
-            "train_latency_s":  float(train_latency_s), # ← nouveau
-            "f1_local":         float(f1_local),
-           
-            "alpha": alpha_stable,
+            "bank_id":         BANK_ID,
+            "model_type":      MODEL_TYPE,
+            "train_loss":      float(mean_loss),
+            "eval_latency_ms": float(eval_latency_ms),
+            "train_latency_s": float(train_latency_s),
+            "f1_local":        float(f1_local),
+            "alpha":           alpha_stable,
         }
 
 

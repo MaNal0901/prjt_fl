@@ -28,7 +28,7 @@ services:
     environment:
       - NUM_ROUNDS=2
       - MIN_CLIENTS=4
-      - MODEL_TYPE=mlp       # Ajouté pour la cohérence
+      - MODEL_TYPE=cnn1d   # Ajouté pour la cohérence
       - INPUT_DIM=37    
     networks:
       - fl-network
