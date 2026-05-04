@@ -1,0 +1,16 @@
+[
+  {
+    "round": 1,
+    "timestamp": "2026-04-15T13:36:32.229861",
+    "banks": [],
+    "global_weighted_f1": 0.0,
+    "global_weighted_auc": 0.0
+  },
+  {
+    "round": 2,
+    "timestamp": "2026-04-15T14:04:36.257747",
+    "banks": [],
+    "global_weighted_f1": 0.0,
+    "global_weighted_auc": 0.0
+  }
+]

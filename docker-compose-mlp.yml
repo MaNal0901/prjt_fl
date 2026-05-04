@@ -18,12 +18,15 @@ services:
     environment:
       - NUM_ROUNDS=2
       - MIN_CLIENTS=4
-      - MODEL_TYPE=mlp       # Ajouté pour la cohérence
-      - INPUT_DIM=37         # Ajouté pour la cohérence
+      - MODEL_TYPE=mlp
+      - INPUT_DIM=37
     networks:
       - fl-network
     restart: on-failure
-    
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
     healthcheck:
       test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('localhost',8080)); s.close()"]
@@ -44,6 +47,7 @@ services:
       - BATCH_SIZE=80
       - LR=0.01
       - INPUT_DIM=37
+      - OMP_NUM_THREADS=1
     volumes:
       - ./data:/app/data
       - ./certs:/certs
@@ -53,6 +57,10 @@ services:
     networks:
       - fl-network
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   bank-b:
     build: ./client
@@ -66,6 +74,7 @@ services:
       - BATCH_SIZE=80
       - LR=0.01
       - INPUT_DIM=37
+      - OMP_NUM_THREADS=1
     volumes:
       - ./data:/app/data
       - ./certs:/certs
@@ -75,6 +84,10 @@ services:
     networks:
       - fl-network
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   bank-c:
     build: ./client
@@ -88,6 +101,7 @@ services:
       - BATCH_SIZE=80
       - LR=0.01
       - INPUT_DIM=37
+      - OMP_NUM_THREADS=1
     volumes:
       - ./data:/app/data
       - ./certs:/certs
@@ -97,6 +111,10 @@ services:
     networks:
       - fl-network
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   bank-d:
     build: ./client
@@ -110,6 +128,7 @@ services:
       - BATCH_SIZE=80
       - LR=0.01
       - INPUT_DIM=37
+      - OMP_NUM_THREADS=1
     volumes:
       - ./data:/app/data
       - ./certs:/certs
@@ -119,6 +138,10 @@ services:
     networks:
       - fl-network
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
 networks:
   fl-network:
